@@ -75,6 +75,25 @@ class CausalAttention(Module):
 
         return self.to_out(out)
 
+# integrate previous pause / thinking information
+
+class IntegratePreviousThought(Module):
+    def __init__(self, dim):
+        super().__init__()
+        self.net =  Sequential(
+            RMSNorm(dim),
+            Rearrange('b n p d -> b n (p d)'),
+            nn.Linear(dim * 2, dim)
+        )
+
+    def forward(self, x, pause_tokens):
+        p = pause_tokens[:, :, -1]
+        p = F.pad(p, (0, 0, 1, -1), value = 0.)
+
+        x = torch.stack((x, p), dim = -2)
+        out = self.net(x)
+        return out
+
 # class
 
 class PauseTransformer(Module):
@@ -94,7 +113,10 @@ class PauseTransformer(Module):
         self.token_emb = nn.Embedding(num_tokens, dim)
 
         self.max_pause_length = max_pause_length
+
         self.pause_tokens = nn.Parameter(torch.randn(max_pause_length, dim))
+
+        self.integrate_prev_pause = IntegratePreviousThought(dim)
 
         self.layers = ModuleList([])
 
@@ -112,7 +134,8 @@ class PauseTransformer(Module):
     def forward(
         self,
         x,
-        return_loss = False
+        return_loss = False,
+        no_prev_pause_integration = False
     ):
         """
         einstein notation:
@@ -145,6 +168,15 @@ class PauseTransformer(Module):
 
             x = rearrange(x, '(b n) p d -> b n p d', b = batch)
             x, p = unpack(x, ps, 'b n * d')
+
+            # during training, should allow for forcing each token to think independent of previous token's thinking
+
+            if no_prev_pause_integration:
+                continue
+
+            # integrating the previous pause token
+
+            x = x + self.integrate_prev_pause(x, p)
 
         x, _ = pack([x, p], 'b n * d')
 
