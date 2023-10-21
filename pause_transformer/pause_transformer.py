@@ -3,7 +3,7 @@ import torch.nn.functional as F
 from torch import nn, Tensor, einsum
 from torch.nn import Module, ModuleList, Sequential
 
-from einops import rearrange, repeat
+from einops import rearrange, repeat, pack, unpack
 from einops.layers.torch import Rearrange
 
 # functions
@@ -84,6 +84,7 @@ class PauseTransformer(Module):
         num_tokens,
         dim,
         depth,
+        max_pause_length = 2,
         dim_head = 64,
         heads = 8,
         ff_mult = 4
@@ -91,6 +92,10 @@ class PauseTransformer(Module):
         super().__init__()
 
         self.token_emb = nn.Embedding(num_tokens, dim)
+
+        self.max_pause_length = max_pause_length
+        self.pause_tokens = nn.Parameter(torch.randn(max_pause_length, dim))
+
         self.layers = ModuleList([])
 
         for _ in range(depth):
@@ -104,12 +109,53 @@ class PauseTransformer(Module):
             nn.Linear(dim, num_tokens, bias = False)
         )
 
-    def forward(self, x):
+    def forward(
+        self,
+        x,
+        return_loss = False
+    ):
+        """
+        einstein notation:
+        b - batch
+        n - main sequence length
+        p - thinking sequence length (pause)
+        d - feature dimension
+        """
+
+        if return_loss:
+            x, labels = x[:, :-1], x[:, 1:]
+
+        batch, seq_len = x.shape
+
         x = self.token_emb(x)
+
+        p = repeat(self.pause_tokens, 'p d -> b n p d', b = batch, n = seq_len)
 
         for attn, ff in self.layers:
             x = attn(x) + x
             x = ff(x) + x
 
+            # now process the thinking tokens
+
+            x, ps = pack([x, p], 'b n * d')
+            x = rearrange(x, '... p d -> (...) p d')
+
+            x = attn(x) + x
+            x = ff(x) + x
+
+            x = rearrange(x, '(b n) p d -> b n p d', b = batch)
+            x, p = unpack(x, ps, 'b n * d')
+
+        x, _ = pack([x, p], 'b n * d')
+
         logits = self.to_logits(x)
-        return logits
+
+        if not return_loss:
+            return logits
+
+        labels = repeat(labels, 'b n -> (b p) n', p = self.max_pause_length + 1)
+
+        logits = rearrange(logits, 'b n p d -> (b p) d n')
+
+        loss = F.cross_entropy(logits, labels)
+        return loss
