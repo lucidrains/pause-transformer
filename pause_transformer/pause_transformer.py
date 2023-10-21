@@ -22,11 +22,21 @@ class RMSNorm(Module):
     def forward(self, x):
         return F.normalize(x, dim = -1) * self.scale * self.gamma
 
+# cheap relative positions
+# from Peng Bo's RWKV
+
+class ShiftTokens(Module):
+    def forward(self, x):
+        x, x_shift = x.chunk(2, dim = -1)
+        x_shift = F.pad(x_shift, (0, 0, 1, -1), value = 0.)
+        return torch.cat((x, x_shift), dim = -1)
+
 # feedforward
 
 def FeedForward(dim, mult = 4):
     dim_inner = int(dim * mult)
     return Sequential(
+        ShiftTokens(),
         RMSNorm(dim),
         nn.Linear(dim, dim_inner),
         nn.GELU(),
@@ -46,6 +56,7 @@ class CausalAttention(Module):
         dim_inner = dim_head * heads
 
         self.norm = RMSNorm(dim)
+
         self.to_qkv = Sequential(
             nn.Linear(dim, dim_inner * 3, bias = False),
             Rearrange('b n (qkv h d) -> qkv b h n d', qkv = 3, h = heads)
