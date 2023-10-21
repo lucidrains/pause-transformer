@@ -84,7 +84,7 @@ class CausalAttention(Module):
 
         out = einsum('b h i j, b h j d -> b h i d', attn, v)
 
-        return self.to_out(out)
+        return self.to_out(out), torch.stack((k, v))
 
 # integrate previous pause / thinking information
 
@@ -166,7 +166,8 @@ class PauseTransformer(Module):
         p = repeat(self.pause_tokens, 'p d -> b n p d', b = batch, n = seq_len)
 
         for attn, ff in self.layers:
-            x = attn(x) + x
+            attn_out, cached_kvs = attn(x)
+            x = x + attn_out
             x = ff(x) + x
 
             # now process the thinking tokens
@@ -174,7 +175,9 @@ class PauseTransformer(Module):
             x, ps = pack([x, p], 'b n * d')
             x = rearrange(x, '... p d -> (...) p d')
 
-            x = attn(x) + x
+            attn_out, _ = attn(x)
+
+            x = x + attn_out
             x = ff(x) + x
 
             x = rearrange(x, '(b n) p d -> b n p d', b = batch)
