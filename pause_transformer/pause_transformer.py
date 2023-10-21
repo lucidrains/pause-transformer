@@ -174,7 +174,7 @@ class PauseTransformer(Module):
             if no_prev_pause_integration:
                 continue
 
-            # integrating the previous pause token
+            # integrating the previous last pause token - todo (make variable which thinking step of the previous pause token to extract)
 
             x = x + self.integrate_prev_pause(x, p)
 
