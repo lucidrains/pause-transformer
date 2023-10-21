@@ -1,4 +1,5 @@
 import torch
+import torch.nn.functional as F
 from torch import nn, Tensor, einsum
 from torch.nn import Module, ModuleList, Sequential
 
@@ -72,7 +73,7 @@ class CausalAttention(Module):
 
         out = einsum('b h i j, b h j d -> b h i d', attn, v)
 
-        return out
+        return self.to_out(out)
 
 # class
 
@@ -94,7 +95,7 @@ class PauseTransformer(Module):
 
         for _ in range(depth):
             self.layers.append(ModuleList([
-                Attention(dim = dim, dim_head = dim_head, heads = heads),
+                CausalAttention(dim = dim, dim_head = dim_head, heads = heads),
                 FeedForward(dim = dim, mult = ff_mult)
             ]))
 
