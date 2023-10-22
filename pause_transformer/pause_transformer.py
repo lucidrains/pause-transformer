@@ -11,6 +11,15 @@ from einops.layers.torch import Rearrange
 def exists(v):
     return v is not None
 
+# tensor functions
+
+def log(t, eps = 1e-20):
+    return t.clamp(min = eps).log()
+
+def entropy(t, dim = -1):
+    prob = t.softmax(dim = dim)
+    return (prob * log(prob)).sum(dim = dim)
+
 # norm
 
 class RMSNorm(Module):
@@ -161,6 +170,7 @@ class PauseTransformer(Module):
         self,
         x,
         return_loss = False,
+        return_logit_entropy = False,
         arrest_pausing = False,
         no_prev_pause_integration = False,
         pause_lengths = None,
@@ -227,6 +237,9 @@ class PauseTransformer(Module):
             x, _ = pack([x, p], 'b n * d')
 
         logits = self.to_logits(x)
+
+        if return_logit_entropy:
+            return entropy(logits)
 
         if not return_loss:
             return logits
