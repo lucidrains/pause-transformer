@@ -9,8 +9,8 @@ Again, the idea relies on axial attention; one axis attends along the sequence l
 ## Todo
 
 - [x] allow for custom pause distributions across token
+- [x] see if one can do a two pass, using the logit entropy as a way to decide how to shape the pause mask
 
-- [ ] see if one can do a two pass, using the logit entropy as a way to decide how to shape the pause mask
 - [ ] run experiments on enwik8, but if do not see anything, move onwards to something harder, say arithmetic
 
 ## Citations
