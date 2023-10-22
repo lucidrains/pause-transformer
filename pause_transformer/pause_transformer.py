@@ -187,6 +187,10 @@ class PauseTransformer(Module):
 
         p = repeat(self.pause_tokens, 'p d -> b n p d', b = batch, n = seq_len)
 
+        if exists(pause_lengths):
+            max_pause = pause_lengths.amax().item()
+            p = p[:, :, :(max_pause + 1)]
+
         for attn, ff in self.layers:
             attn_out, cached_kvs = attn(x)
             x = x + attn_out
