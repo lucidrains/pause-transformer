@@ -146,6 +146,7 @@ class PauseTransformer(Module):
         self,
         x,
         return_loss = False,
+        arrest_pausing = False,
         no_prev_pause_integration = False
     ):
         """
@@ -170,6 +171,9 @@ class PauseTransformer(Module):
             x = x + attn_out
             x = ff(x) + x
 
+            if arrest_pausing:
+                continue
+
             # now process the thinking tokens
 
             x, ps = pack([x, p], 'b n * d')
@@ -192,16 +196,19 @@ class PauseTransformer(Module):
 
             x = x + self.integrate_prev_pause(x, p)
 
-        x, _ = pack([x, p], 'b n * d')
+        if not arrest_pausing:
+            x, _ = pack([x, p], 'b n * d')
 
         logits = self.to_logits(x)
 
         if not return_loss:
             return logits
 
-        labels = repeat(labels, 'b n -> (b p) n', p = self.max_pause_length + 1)
-
-        logits = rearrange(logits, 'b n p d -> (b p) d n')
+        if arrest_pausing:
+            logits = rearrange(logits, 'b n d -> b d n')
+        else:
+            labels = repeat(labels, 'b n -> (b p) n', p = self.max_pause_length + 1)
+            logits = rearrange(logits, 'b n p d -> (b p) d n')
 
         loss = F.cross_entropy(logits, labels)
         return loss
