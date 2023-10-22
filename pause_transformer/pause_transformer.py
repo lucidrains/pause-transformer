@@ -97,8 +97,23 @@ class IntegratePreviousThought(Module):
             nn.Linear(dim * 2, dim)
         )
 
-    def forward(self, x, pause_tokens):
-        p = pause_tokens[:, :, -1]
+    def forward(
+        self,
+        x,
+        pause_tokens,
+        pause_lengths = None
+    ):
+        if not exists(pause_lengths):
+            p = pause_tokens[:, :, -1]
+        else:
+            batch, seq_len = x.shape[:2]
+            batch_arange = torch.arange(batch, device = x.device)[:, None, None]
+            seq_arange = torch.arange(seq_len, device = x.device)[:, None]
+            pause_lengths = pause_lengths[:, :, None]
+
+            p = pause_tokens[batch_arange, seq_arange, pause_lengths]
+            p = rearrange(p, '... 1 d -> ... d')
+
         p = F.pad(p, (0, 0, 1, -1), value = 0.)
 
         x = torch.stack((x, p), dim = -2)
@@ -147,7 +162,9 @@ class PauseTransformer(Module):
         x,
         return_loss = False,
         arrest_pausing = False,
-        no_prev_pause_integration = False
+        no_prev_pause_integration = False,
+        pause_lengths = None,
+        rand_uniform_pausing = False        # this would do random pausing uniform from [0, max_pause_length]
     ):
         """
         einstein notation:
@@ -159,6 +176,10 @@ class PauseTransformer(Module):
 
         if return_loss:
             x, labels = x[:, :-1], x[:, 1:]
+
+        if not arrest_pausing:
+            if rand_uniform_pausing and not exists(pause_lengths):
+                pause_lengths = torch.randint(0, self.max_pause_length, x.shape)
 
         batch, seq_len = x.shape
 
@@ -194,7 +215,7 @@ class PauseTransformer(Module):
 
             # integrating the previous last pause token - todo (make variable which thinking step of the previous pause token to extract)
 
-            x = x + self.integrate_prev_pause(x, p)
+            x = x + self.integrate_prev_pause(x, p, pause_lengths)
 
         if not arrest_pausing:
             x, _ = pack([x, p], 'b n * d')
